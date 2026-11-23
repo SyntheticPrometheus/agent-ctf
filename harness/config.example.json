@@ -1,0 +1,18 @@
+{
+  "mode": "turns",
+  "max-turns": 20,
+  "tool-calls": 5,
+  "defense-window": 2,
+  "scoring": "elimination",
+  "pause-idle": false,
+  "watch": true,
+
+  "_realtime_example": {
+    "mode": "realtime",
+    "duration": 1200,
+    "defense-window": 120,
+    "scoring": "points",
+    "watch": true
+  },
+  "_note": "Load with: python harness/run_match.py --config harness/config.example.json . CLI flags override file values. Keys mirror the --flag names (dashes ok). The _realtime_example / _note keys are ignored by the loader because they don't match a flag."
+}

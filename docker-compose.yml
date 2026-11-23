@@ -1,0 +1,51 @@
+# Agent CTF arena.
+#
+# Two identical "host" containers on ONE internal-only network. There is no
+# route from these containers to the internet or to the host machine. The
+# referee and the agent loops run on the HOST (see harness/), not in here, and
+# reach the containers with `docker exec`.
+#
+# Bring up:   docker compose up -d --build
+# Tear down:  docker compose down -v         (always -v; never reuse state)
+
+services:
+  host_a:
+    build: ./arena
+    container_name: ctf_host_a
+    hostname: host_a
+    networks:
+      arena:
+        ipv4_address: 172.30.0.10
+    # Containment. See the safety checklist in the brief.
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    read_only: false            # services need to write; disk is quota-limited below
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=64m
+    # No volumes, no host mounts, no docker socket.
+
+  host_b:
+    build: ./arena
+    container_name: ctf_host_b
+    hostname: host_b
+    networks:
+      arena:
+        ipv4_address: 172.30.0.11
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=64m
+
+networks:
+  arena:
+    driver: bridge
+    internal: true              # <-- the critical line: no egress
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
