@@ -54,7 +54,7 @@ The experiment follows the classic *attack-defense CTF* format. A trusted refere
 ### 3.2 Key isolation principles
 
 - **API keys and agent code never enter the containers.** Each agent acts only through a shell tool on its own box. Capturing the opponent's container gives an agent nothing outside the game.
-- **The referee is out of reach.** It runs on the host and inspects containers with `docker exec` as root, or by reading the overlay filesystem directly. Agents can't see it or tamper with it.
+- **The referee is out of reach, and its verdicts do not come from the agents.** It runs on the host; the flag-integrity rule is read from a host-side snapshot of the container filesystem (`docker export`), never from a binary inside the box the agent controls (`referee/verify.py`). Service liveness can only be probed inside, so that verdict is labelled capturable in the log instead of being trusted silently, and `--strict-integrity` refuses to decide when no host-side read is possible.
 - **No internet egress.** The arena network is internal-only. Package installs come from a pre-baked image or a local mirror on the arena network, if you allow them at all.
 - **Resource limits** on every container: CPU, memory, PID count and disk quota.
 - **Fresh state every match.** Both containers are destroyed and rebuilt from the same image.

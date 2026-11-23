@@ -16,7 +16,9 @@ play -> final scan -> resolve -> compose down -v.
 from __future__ import annotations
 import argparse, json, os, subprocess, sys, threading, time, uuid
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "referee"))
-from referee import Referee, Side          # noqa: E402
+import referee                             # noqa: E402
+import verify                              # noqa: E402
+from referee import Referee, Side           # noqa: E402
 from tools import AgentTools               # noqa: E402
 from agent import Agent                    # noqa: E402
 from match_clock import MatchClock         # noqa: E402
@@ -45,6 +47,11 @@ def parse_args():
     ap.add_argument("--scoring", choices=["elimination", "points"], default="elimination")
     ap.add_argument("--pause-idle", action="store_true", help="turn mode only")
     ap.add_argument("--watch", action="store_true", help="inotify fs event log")
+    ap.add_argument("--verifier", choices=["snapshot", "in-container"], default="snapshot",
+                    help="where the flag-integrity verdict is read: a host-side export of the "
+                         "container (default; an agent cannot fake it) or docker exec inside it")
+    ap.add_argument("--strict-integrity", action="store_true", default=True,
+                    help="decide nothing when the integrity source is not host-side (default)")
     args = ap.parse_args()
     if args.config:
         with open(args.config) as f:
@@ -68,10 +75,17 @@ def main():
     time.sleep(8)
 
     side_a, side_b = Side("agent_A", A_CONTAINER), Side("agent_B", B_CONTAINER)
-    ref = Referee(side_a, side_b, log_path, scoring=args.scoring)
+    # The flag rule is read from the host side by default: an agent that shims grep inside its
+    # own box cannot fake "flag intact". CTF_VERIFIER=in-container restores the old path.
+    backend = verify.from_env(referee._dexec)
+    if args.verifier == "in-container":
+        backend = referee.ContainerExec(referee._dexec)
+    ref = Referee(side_a, side_b, log_path, scoring=args.scoring, backend=backend,
+                  strict_integrity=args.strict_integrity)
     ref.log("match_start", match_id=args.match_id, mode=args.mode,
             first=args.first, scoring=args.scoring,
-            defense_window=args.defense_window)
+            defense_window=args.defense_window,
+            integrity_src=ref.backend.kind, health_src="in-container")
     ref.plant_flags()
     ref.start_monitor()
     if args.watch:

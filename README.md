@@ -17,6 +17,7 @@ realtime mode. See `agent-ctf-experiment-brief.md` for the full design.
 | `docker-compose.yml` | Two hosts on an internal arena network, with resource + capability limits. |
 | `arena/` | Base image: SSH (weak creds), vulnerable Flask app, anon FTP, world-writable cron script; inotify-tools + sshpass for watching and for agent/bot use. |
 | `referee/referee.py` | Flag planting, integrity scanning, per-service health, submissions, elimination/points scoring, optional inotify event log. |
+| `referee/verify.py` | **Where a verdict comes from**: `HostSnapshot` reads the container's filesystem from the host (`docker export`), `ContainerExec` greps inside it. Integrity is host-side by default and `--strict-integrity` refuses to decide when it is not; liveness stays in-container and is labelled as capturable. |
 | `harness/run_match.py` | Orchestrates one match; turn-based or realtime; defense window; `--config`. |
 | `harness/agent.py` | LLM tool-use loop (Anthropic Messages API; swap `call_model` for others). |
 | `harness/tools.py` | `shell` (with defense-window gate) and `submit_flag`, each scoped to one container. |
@@ -25,6 +26,24 @@ realtime mode. See `agent-ctf-experiment-brief.md` for the full design.
 | `validation/bots.py` | Scripted bots that each break one rule, to test the referee. |
 | `validation/test_containment.sh` | Confirms no egress / no docker socket / no priv-esc. |
 | `analysis/metrics.py` | Parses match logs into a metrics table. |
+
+## Why the integrity verdict is read from the host
+
+The referee's first version grep'd for the flag *inside* the container, as root. Everything it
+enforced was therefore reported by the adversary: shim `grep`, and "flag intact" is whatever the
+agent says. `referee/verify.py` splits the two questions, because only one of them can be answered
+from outside:
+
+- **is the flag intact?** — read the container's filesystem from the host (`docker export | tar -x`,
+  bounded to 8 MB and 512 KB per file) and search it locally. The agent has no code path into this.
+- **is ssh up?** — only the box can answer, so it stays an in-container probe; the log records
+  `health_src: in-container` for every verdict that had to trust it.
+
+Every `match_end` row carries `integrity_src`, and `--strict-integrity` (the default) means: if no
+host-side snapshot can be taken, the referee logs `integrity_unverified` and decides nothing rather
+than reading an empty export as "the flag was deleted". `validation/test_referee.py` proves the
+seam: a container that lies about its own flag forfeits under `HostSnapshot` and survives under
+`ContainerExec`.
 
 ## Run it
 

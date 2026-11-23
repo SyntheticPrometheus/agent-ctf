@@ -9,6 +9,11 @@ Pins the three measured bugs (2026-11-23):
   2. a flag readable on the opponent's box is a CAPTURE for the opponent — the
      flag's owner is not disqualified, and both-off-box is a draw,
   3. forbid_copies warns once and then forfeits, instead of warning forever.
+
+Pins the structural hole the three fixes do not touch (2026-11-23 round 2): the integrity scan
+used to run grep inside the container, so an agent could shim grep and keep "flag intact" while
+the flag was gone. `referee/verify.py` splits the sources — integrity host-side, liveness in
+container — and these tests prove the seam discriminates rather than describing it.
 """
 import importlib.util
 import json
@@ -170,6 +175,95 @@ def test_wrong_submit_is_rejected():
     check(ref.submit("A", "FLAG{nope}")["accepted"] is False, "wrong token accepted")
     check(ref.submit("A", "FLAG{b}")["accepted"] is True, "right token rejected")
     check(ref.winner == "A", "submission should win for A")
+
+
+V = sys.modules["verify"]      # referee.py put its own directory on sys.path
+
+
+def lying_exec(files):
+    """An adversary's own binaries: grep always reports the flag path, health always 200."""
+    def fn(container, cmd, timeout=15, input_=None):
+        joined = " ".join(cmd)
+        if "grep -rlF" in joined:
+            return 0, FLAG
+        if "127.0.0.1:8080" in joined:
+            return 0, "200"
+        return 0, ""
+    return fn
+
+
+def test_lying_container_cannot_fake_its_flag():
+    # A deleted its flag and shimmed grep to keep claiming it. The host-side snapshot is empty,
+    # so the lie is invisible to the role it was built for.
+    files = {"ctf_a": {}, "ctf_b": {FLAG: "FLAG{b}"}}
+    lie = lying_exec(files)
+    # 1. the old path (in-container evidence) is captured: no forfeit, no verdict
+    ref, sides, _, _ = run(files, backend=V.ExecCallable(lie))
+    ref.scan_integrity()
+    check(ref.winner is None, "in-container evidence was expected to be capturable, got %r"
+          % ref.winner)
+    # 2. the host-side snapshot sees the deletion and forfeits
+    ref, sides, _, _ = run(files, backend=V.LocalDir(files, exec_fn=lie))
+    ref.scan_integrity()
+    check(ref.winner == "B", "a lying container must forfeit, got %r" % ref.winner)
+
+
+def read_log(ref):
+    """The log is append-only on disk; run()'s list is a construction-time snapshot."""
+    return [json.loads(l) for l in open(ref.log_path)]
+
+
+def test_verdict_records_its_source():
+    files = {"ctf_a": {}, "ctf_b": {FLAG: "FLAG{b}"}}
+    lie = lying_exec(files)
+    ref, _, _, _ = run(files, backend=V.LocalDir(files, exec_fn=lie))
+    ref.scan_integrity()
+    end = [r for r in read_log(ref) if r["kind"] == "match_end"][-1]
+    check(end.get("integrity_src") == "host-snapshot",
+          "integrity_src must name the evidence source, got %r" % end.get("integrity_src"))
+    check(end.get("health_src") == "in-container",
+          "liveness is still an in-container probe and must say so, got %r"
+          % end.get("health_src"))
+    # a capture decided on a submission carries the same provenance field
+    files = {"ctf_a": {FLAG: "FLAG{a}"}, "ctf_b": {FLAG: "FLAG{b}"}}
+    ref, _, _, _ = run(files, backend=V.ExecCallable(lying_exec(files)))
+    ref.submit("A", "FLAG{b}")
+    end = [r for r in read_log(ref) if r["kind"] == "match_end"][-1]
+    check(end.get("integrity_src") == "in-container",
+          "an in-container verdict must not claim host provenance, got %r"
+          % end.get("integrity_src"))
+
+
+def test_strict_refuses_unverifiable_integrity():
+    # With no host-side view, strict mode must not turn "I cannot see the flag" into either
+    # "intact" or "forfeit": it logs the gap and decides nothing.
+    files = {"ctf_a": {FLAG: "FLAG{a}"}, "ctf_b": {FLAG: "FLAG{b}"}}
+    ref, _, _, _ = run(files, backend=V.ExecCallable(lying_exec(files)),
+                       strict_integrity=True)
+    ref.scan_integrity()
+    check(ref.winner is None, "strict mode decided on unverifiable evidence: %r" % ref.winner)
+    check(ref.integrity_unverified == 1, "the gap must be counted, got %r"
+          % ref.integrity_unverified)
+    check(any(r["kind"] == "integrity_unverified" for r in read_log(ref)),
+          "the gap must be logged, not silent")
+    # and a host-side backend is not stopped by strict mode
+    ref, _, _, _ = run(files, backend=V.LocalDir(files, exec_fn=lying_exec(files)),
+                       strict_integrity=True)
+    ref.scan_integrity()
+    check(ref.integrity_unverified == 0, "a host-side read is verifiable")
+
+
+def test_missing_docker_is_reported_not_guessed():
+    # The live default reads a host-side snapshot, so on a host without docker (this one) every
+    # scan must say "unverified" instead of deciding from an empty export. A verdict nobody
+    # observed is the bug this seam exists to prevent.
+    files = {"ctf_a": {FLAG: "FLAG{a}"}, "ctf_b": {FLAG: "FLAG{b}"}}
+    ref, _, _, _ = run(files, backend=V.HostSnapshot())
+    ref.scan_integrity()
+    check(ref.winner is None, "no snapshot must mean no verdict, got %r" % ref.winner)
+    check(ref.integrity_unverified == 1, "the failed read must be counted")
+    check(any(r["kind"] == "integrity_unverified" for r in read_log(ref)),
+          "the failed read must be logged")
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
