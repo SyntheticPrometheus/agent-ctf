@@ -178,7 +178,7 @@ class HostSnapshot(Backend):
                                 break
                             tail = data[-carry:] if carry else b""
                         if found:
-                            hits.append("/" + member.name.lstrip("./"))
+                            hits.append(_member_path(member))
             except tarfile.TarError as e:
                 raise Unavailable(f"unreadable export stream: {e}") from e
         return sorted(hits)
@@ -222,12 +222,33 @@ class HostSnapshot(Backend):
                         data = fh.read(min(member.size, MAX_FILE_BYTES))
                         budget -= len(data)
                         try:
-                            out["/" + member.name.lstrip("./")] = data.decode("utf-8", "replace")
+                            out[_member_path(member)] = data.decode("utf-8", "replace")
                         except Exception:
                             continue
             except tarfile.TarError as e:
                 raise Unavailable(f"unreadable export stream: {e}") from e
             return out
+
+
+def _member_path(member: tarfile.TarInfo) -> str:
+    """The member's path as the container would see it, or Unavailable if it escapes the root.
+
+    A `docker export` of a real filesystem never carries "../", so a member that does is either a
+    forged stream or a docker bug — not something an integrity verdict may be read from. The label
+    matters too: a stripped "../" would alias a member onto a plausible real path, and the verdict
+    quotes paths.
+    """
+    raw = member.name
+    parts = []
+    for part in raw.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            raise Unavailable(f"export carries a path escaping the root: {raw!r}")
+        parts.append(part)
+    if not parts:
+        raise Unavailable(f"export carries an unnamed member: {raw!r}")
+    return "/" + "/".join(parts)
 
 
 def from_env(exec_fn) -> Backend:

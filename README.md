@@ -45,6 +45,13 @@ than reading an empty export as "the flag was deleted". `validation/test_referee
 seam: a container that lies about its own flag forfeits under `HostSnapshot` and survives under
 `ContainerExec`.
 
+**What that is not.** Host-side means the *agent* has no code path into the evidence; it does not
+mean independent verification. The verdict is whatever `docker export` on the host's PATH returns,
+and a forged stream decides the match — `validation/test_trust_boundary.py` pins that, and refuses a
+stream whose member names escape the root (`../`) instead of reading a plausible-looking alias. The
+remaining trust boundary is the host's docker CLI and the box it runs on; a match needs that host to
+be the referee's, not the agent's.
+
 ## Run it
 
 ```bash
