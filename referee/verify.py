@@ -38,6 +38,8 @@ from pathlib import Path
 
 MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024      # a snapshot read is bounded: an agent can fill a disk
 MAX_FILE_BYTES = 512 * 1024               # ... and can plant a huge file to stall the scan
+MAX_SEARCH_BYTES = 256 * 1024 * 1024      # the token search streams; past this it says so
+SEARCH_CHUNK = 1 * 1024 * 1024
 
 
 class Unavailable(Exception):
@@ -136,21 +138,75 @@ class HostSnapshot(Backend):
         except subprocess.TimeoutExpired:
             return 124, "timeout"
 
+    def find_token(self, container, token):
+        """Search the exported stream in bytes, chunk by chunk.
+
+        The rule is about the filesystem, so a token anywhere in a regular file is a
+        holding file: a per-file size cap would let an agent keep a copy the referee
+        cannot see (a padded copy is a copy), and a truncated scan that returns an
+        empty list reads as 'flag lost' — a forfeit nobody observed. So this path
+        never decodes, never stops at a file boundary, and raises instead of
+        answering from a partial read.
+        """
+        needle = token.encode()
+        carry = max(len(needle) - 1, 0)
+        hits, scanned = [], 0
+        with tempfile.TemporaryDirectory(prefix="ctf-snap-") as td:
+            tar_path = self._export(container, Path(td))
+            try:
+                with tarfile.open(tar_path) as tf:
+                    for member in tf:
+                        if not member.isfile():
+                            continue
+                        fh = tf.extractfile(member)
+                        if fh is None:
+                            continue
+                        tail, found = b"", False
+                        while True:
+                            chunk = fh.read(SEARCH_CHUNK)
+                            if not chunk:
+                                break
+                            scanned += len(chunk)
+                            if scanned > MAX_SEARCH_BYTES:
+                                raise Unavailable(
+                                    f"token search exceeded {MAX_SEARCH_BYTES} bytes "
+                                    f"in {container}: a verdict from a partial scan "
+                                    f"is not evidence")
+                            data = tail + chunk
+                            if needle in data:
+                                found = True
+                                break
+                            tail = data[-carry:] if carry else b""
+                        if found:
+                            hits.append("/" + member.name.lstrip("./"))
+            except tarfile.TarError as e:
+                raise Unavailable(f"unreadable export stream: {e}") from e
+        return sorted(hits)
+
+    def _export(self, container: str, root: Path) -> Path:
+        """`docker export` into root/snap.tar once; both readers share this one stream."""
+        try:
+            exp = subprocess.run(["docker", "export", container], timeout=120,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except FileNotFoundError as e:
+            raise Unavailable(f"docker not on PATH: {e}") from e
+        except subprocess.TimeoutExpired as e:
+            raise Unavailable("docker export timed out") from e
+        if exp.returncode != 0:
+            raise Unavailable(f"docker export failed: {exp.stderr[:200]!r}")
+        tar_path = root / "snap.tar"
+        tar_path.write_bytes(exp.stdout)
+        return tar_path
+
     def files(self, container):
-        """Export once per call; the tree is attacker-controlled, so every read is bounded."""
+        """Export once per call; the tree is attacker-controlled, so every read is bounded.
+
+        Content reads cap each file (a huge file must not stall a text consumer). The
+        integrity rule does NOT use this: find_token() streams the whole stream, because
+        skipping a large file here would hide a copy."""
         with tempfile.TemporaryDirectory(prefix="ctf-snap-") as td:
             root = Path(td)
-            try:
-                exp = subprocess.run(["docker", "export", container], timeout=120,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            except FileNotFoundError as e:
-                raise Unavailable(f"docker not on PATH: {e}") from e
-            except subprocess.TimeoutExpired as e:
-                raise Unavailable("docker export timed out") from e
-            if exp.returncode != 0:
-                raise Unavailable(f"docker export failed: {exp.stderr[:200]!r}")
-            tar_path = root / "snap.tar"
-            tar_path.write_bytes(exp.stdout)
+            tar_path = self._export(container, root)
             out = {}
             budget = MAX_SNAPSHOT_BYTES
             try:
