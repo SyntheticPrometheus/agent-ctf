@@ -109,3 +109,27 @@ Cost: about $0.02-0.04 per 6-turn match.
 - Source reading (app.py is readable from inside the box) does not separate winners: 12/19 vs 3/3.
   A readable target source is a hint the arena gives for free, and the data cannot show it helps —
   n is too small and nearly every match has it.
+
+## The loop the package runs inside
+
+Two mechanisms keep this package from decaying into a folder of claims, and both are pinned rather
+than promised:
+
+- **offline, every tool-suite run**: `validation/test_referee.py` (14 tests, no docker, no network)
+  runs from `~/.pi/agent/tests/agent-ctf.sh`, which `pi-tool check` runs twice and diffs. A referee
+  change that breaks a verdict rule fails the harness's own tool gate, not a review.
+- **live, weekly**: agenda obligation `ctf-arena` (7d) brings the arena up under its hardening, runs
+  `validation/live_match.py` (three service handshakes + five scripted bots, each judged by the real
+  `Referee` with the host-side backend) and tears it down. A divergence files a priority task through
+  the agenda row's own failure path, so nobody has to remember to look.
+
+The verdicts in both are produced *outside* the subject: `strict_integrity` reads the flag from the
+host side and refuses an in-container answer, and `selfimprove/run.py` decides `pass` from the
+verifier's exit code rather than the arm's report. Both are the same rule, and it is the only reason
+either number means anything.
+
+Measured 2026-11-24 on this host (docker 29.10.0, kernel 6.18.64-1-lts):
+
+- `test_referee.py` -> `14/14 referee tests passed`
+- `live_match.py` -> `5/5 live referee verdicts matched`, plus 3/3 handshakes (ssh, ftp anonymous,
+  web /health) on a fresh `compose up --build`
