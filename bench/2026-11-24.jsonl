@@ -1,0 +1,2 @@
+{"match_id": "bench-base-1-024049", "arm": "base", "rc": 0, "wall_s": 253.8, "winner": "draw", "reason": "deadline \u2014 no capture", "calls": 68, "submits": 0}
+{"match_id": "bench-hint-1-024503", "arm": "hint", "rc": 0, "wall_s": 82.3, "winner": "agent_A", "reason": "agent_A captured agent_B's flag", "calls": 29, "submits": 2}

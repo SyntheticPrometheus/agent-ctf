@@ -50,4 +50,19 @@ The harness now owns its wall bound (`--match-timeout`, default 900 s; the turns
 match as a draw with a reason), so a match can no longer be killed mid-turn by a caller's timeout
 and leave no result row — the artefact above.
 
+## The runner
+
+Every match above was started by hand and its outcome read off a log, which is how one arm ended up
+with five trials and another four. `harness/bench.py` does the repetition: N matches per arm, one
+JSONL row each, and a table with only the numbers a small sample supports (decisive vs timeout,
+captures by side, forfeits).
+
+```bash
+sudo python3 harness/bench.py --dry                      # plan + cost estimate, runs nothing
+sudo python3 harness/bench.py --matches 3 --turns 6      # 3 per arm, rows in bench/<date>.jsonl
+```
+
+Verified 2026-11-24 with one match per arm: base draw (68 calls, 0 submits), hint capture by A
+(29 calls, 2 submits), rows appended, exit 0.
+
 Cost: about $0.02-0.04 per 6-turn match.
