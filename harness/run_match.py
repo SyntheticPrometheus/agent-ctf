@@ -18,6 +18,7 @@ import argparse, json, os, subprocess, sys, threading, time, uuid
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "referee"))
 import referee                             # noqa: E402
 import verify                              # noqa: E402
+import arena_lock                          # noqa: E402
 from referee import Referee, Side           # noqa: E402
 from tools import AgentTools               # noqa: E402
 from agent import Agent                    # noqa: E402
@@ -69,6 +70,17 @@ def parse_args():
 
 
 def main():
+    # One match owns the fixed-name containers at a time; the shell wrapper
+    # (validation/live_arena.sh) takes the same lock. See harness/arena_lock.py.
+    try:
+        with arena_lock.lock(900):
+            return _main()
+    except arena_lock.ArenaBusy as e:
+        print(f"arena busy: {e}", file=sys.stderr)
+        return 3
+
+
+def _main():
     args = parse_args()
     os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
     log_path = os.path.join(ROOT, "logs", f"{args.match_id}.jsonl")

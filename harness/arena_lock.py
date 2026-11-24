@@ -1,0 +1,68 @@
+"""One fixed-name arena, one owner at a time.
+
+Both `harness/run_match.py` and `validation/live_arena.sh` drive the same two containers
+(`ctf_host_a`, `ctf_host_b`) on the same network. Two runs at once do not merely interfere:
+each starts with `docker compose down -v`, so one run tears the other's containers down
+mid-match. Measured 2026-11-24: a detached 16-match bench was running while the weekly
+live-referee row started; `docker export` was asked for a container that the bench had
+already killed and returned "container ... is Dead", crashing live_match with a traceback
+that looked like a referee defect.
+
+So ownership is a lock file, not a hope. The shell wrapper takes the same file with
+`flock(1)`; this module is the Python side of that one lock.
+"""
+from __future__ import annotations
+
+import fcntl
+import os
+import sys
+import time
+
+LOCK_PATH = os.environ.get("CTF_ARENA_LOCK", "/run/lock/agent-ctf-arena.lock")
+
+
+class ArenaBusy(RuntimeError):
+    """Another match owns the arena and did not release it in time."""
+
+
+class lock:
+    """Exclusive arena ownership for the duration of one match."""
+
+    def __init__(self, timeout: float = 900.0, path: str = LOCK_PATH):
+        self.timeout = timeout
+        self.path = path
+        self.fh = None
+
+    def acquire(self):
+        self.fh = open(self.path, "a+")
+        deadline = time.monotonic() + self.timeout
+        while True:
+            try:
+                fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    self.fh.close()
+                    self.fh = None
+                    raise ArenaBusy(f"{self.path} is held by another arena owner")
+                time.sleep(1.0)
+        # Name the owner, so a waiting shell wrapper can say who it is waiting for.
+        self.fh.seek(0)
+        self.fh.truncate()
+        self.fh.write(f"{os.getpid()} {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} "
+                      f"{os.path.basename(sys.argv[0])}\n")
+        self.fh.flush()
+        return self
+
+    def release(self):
+        if self.fh is not None:
+            fcntl.flock(self.fh, fcntl.LOCK_UN)
+            self.fh.close()
+            self.fh = None
+
+    def __enter__(self):
+        return self.acquire()
+
+    def __exit__(self, *exc):
+        self.release()
+        return False

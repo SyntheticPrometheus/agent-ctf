@@ -13,6 +13,7 @@ Exit 0 = every row matched; 1 = a verdict differed; 2 = the arena is not up; 3 =
 advertises a port but cannot complete its handshake (see preflight).
 """
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -54,6 +55,45 @@ PROBES = [
 ]
 
 
+def other_match_owner() -> list[str]:
+    """A match runner other than this process, if one is alive.
+
+    The arena containers have fixed names and every runner starts with `docker compose
+    down -v`, so two runners cannot share them. `validation/live_arena.sh` and
+    `harness/run_match.py` hold /run/lock/agent-ctf-arena.lock, but a runner started before
+    that lock existed (measured 2026-11-24: a detached 16-match bench) holds nothing; this
+    check catches it instead of letting `docker export` hit a container it killed.
+    """
+    me = os.getpid()
+    owners = []
+    for pid_s in os.listdir("/proc"):
+        if not pid_s.isdigit() or int(pid_s) == me:
+            continue
+        try:
+            with open(f"/proc/{pid_s}/cmdline", "rb") as f:
+                argv = [a.decode(errors="replace") for a in f.read().split(b"\0") if a]
+        except OSError:
+            continue
+        # Only a python interpreter whose SECOND argument is the runner counts. A shell
+        # command line or this task's own text (both merely *mention* the script) must not
+        # look like a match: that false positive made the wrapper refuse its own caller.
+        if not argv or not os.path.basename(argv[0]).startswith("python"):
+            continue
+        if not len(argv) > 1 or not argv[1].endswith(("harness/run_match.py",
+                                                      "validation/live_match.py")):
+            continue
+        # A runner blocked in flock is waiting for the lock our caller holds: serialised,
+        # not a conflict. Measured wchan: locks_lock_inode_wait.
+        try:
+            with open(f"/proc/{pid_s}/wchan") as f:
+                if f.read().strip() == "locks_lock_inode_wait":
+                    continue
+        except OSError:
+            pass
+        owners.append(f"{pid_s} {' '.join(argv[:3])}")
+    return owners
+
+
 def preflight(peer: str) -> int:
     """Exit 3 and name the cause when the peer cannot answer a handshake it advertises."""
     for label, cmd in PROBES:
@@ -75,6 +115,15 @@ def preflight(peer: str) -> int:
 
 
 def main() -> int:
+    owners = other_match_owner()
+    if owners:
+        print("FATAL: arena busy — another match owns the containers:", file=sys.stderr)
+        for line in owners:
+            print(f"       {line}", file=sys.stderr)
+        print("       run validation/live_arena.sh (it waits on the arena lock) instead",
+              file=sys.stderr)
+        return 3
+
     up = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True).stdout
     if A not in up or B not in up:
         print("FATAL: arena not up — docker compose up -d --build", file=sys.stderr)
