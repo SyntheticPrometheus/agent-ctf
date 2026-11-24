@@ -18,11 +18,17 @@ services:
         ipv4_address: 172.30.0.10
     # Containment. See the safety checklist in the brief.
     cap_drop: ["ALL"]
-    # The arena needs three capabilities back, each for a measured reason (first live bring-up,
-    # 2026-11-24): CHOWN because vsftpd chowns its log even as root; SETUID/SETGID because the
-    # entrypoint drops to the unprivileged agent user with `su` for the web app. Everything else
-    # stays dropped, and containment rests on no-new-privileges plus no sudo for agent.
-    cap_add: ["CHOWN", "SETUID", "SETGID"]
+    # The arena needs four capabilities back, each for a measured reason. First live bring-up,
+    # 2026-11-24: CHOWN because vsftpd chowns its log even as root; SETUID/SETGID because the
+    # entrypoint drops to the unprivileged agent user with `su` for the web app.
+    # 2026-11-27 (task #451): SYS_CHROOT because OpenSSH's privilege-separation pre-auth child
+    # chroots to /run/sshd unconditionally; without it every connection dies with
+    # `chroot("/run/sshd"): Operation not permitted` -> "Connection reset after KEXINIT" and the
+    # arena's own SSH surface (the planted weak credential) is unreachable. CHROOT is no escape
+    # route here: it is not a capability root can use to leave the container, and the agent user
+    # is non-root with no-new-privileges, so it gains nothing. Everything else stays dropped, and
+    # containment rests on no-new-privileges plus no sudo for agent.
+    cap_add: ["CHOWN", "SETUID", "SETGID", "SYS_CHROOT"]
     security_opt: ["no-new-privileges:true"]
     read_only: false            # services need to write; disk is quota-limited below
     pids_limit: 256
@@ -40,11 +46,17 @@ services:
       arena:
         ipv4_address: 172.30.0.11
     cap_drop: ["ALL"]
-    # The arena needs three capabilities back, each for a measured reason (first live bring-up,
-    # 2026-11-24): CHOWN because vsftpd chowns its log even as root; SETUID/SETGID because the
-    # entrypoint drops to the unprivileged agent user with `su` for the web app. Everything else
-    # stays dropped, and containment rests on no-new-privileges plus no sudo for agent.
-    cap_add: ["CHOWN", "SETUID", "SETGID"]
+    # The arena needs four capabilities back, each for a measured reason. First live bring-up,
+    # 2026-11-24: CHOWN because vsftpd chowns its log even as root; SETUID/SETGID because the
+    # entrypoint drops to the unprivileged agent user with `su` for the web app.
+    # 2026-11-27 (task #451): SYS_CHROOT because OpenSSH's privilege-separation pre-auth child
+    # chroots to /run/sshd unconditionally; without it every connection dies with
+    # `chroot("/run/sshd"): Operation not permitted` -> "Connection reset after KEXINIT" and the
+    # arena's own SSH surface (the planted weak credential) is unreachable. CHROOT is no escape
+    # route here: it is not a capability root can use to leave the container, and the agent user
+    # is non-root with no-new-privileges, so it gains nothing. Everything else stays dropped, and
+    # containment rests on no-new-privileges plus no sudo for agent.
+    cap_add: ["CHOWN", "SETUID", "SETGID", "SYS_CHROOT"]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 256
     mem_limit: 512m

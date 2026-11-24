@@ -9,7 +9,8 @@ and a hard expectation per row.
     sudo python3 validation/live_match.py          # containers must already be up
 
 Needs sudo only because the docker socket is root-owned on this host.
-Exit 0 = every row matched; 1 = a verdict differed; 2 = the arena is not up.
+Exit 0 = every row matched; 1 = a verdict differed; 2 = the arena is not up; 3 = a service
+advertises a port but cannot complete its handshake (see preflight).
 """
 import json
 import subprocess
@@ -39,11 +40,48 @@ def bot(name, container, extra):
     return r.returncode
 
 
+# Every advertised service must complete the real handshake from the PEER, not merely listen.
+# Measured 2026-11-27 (task #451): host_b's sshd listened on 22 and reset every connection right
+# after KEXINIT — OpenSSH's privilege-separation child chroots to /run/sshd, and `cap_drop: ALL`
+# had taken CAP_SYS_CHROOT away — so the exfiltrator row failed looking like a referee defect.
+# A port that accepts a TCP connect is not a service: these drive the same handshake the bots do,
+# and a broken one stops the run with its cause instead of scoring 4/5.
+PROBES = [
+    ("ssh password auth", "sshpass -p password123 ssh -o StrictHostKeyChecking=no "
+                          "-o ConnectTimeout=6 agent@{peer} true"),
+    ("ftp anonymous login", "curl -s --max-time 6 ftp://anonymous:x@{peer}/ -o /dev/null"),
+    ("web /health", "curl -sf --max-time 6 -o /dev/null http://{peer}:8080/health"),
+]
+
+
+def preflight(peer: str) -> int:
+    """Exit 3 and name the cause when the peer cannot answer a handshake it advertises."""
+    for label, cmd in PROBES:
+        cmd = cmd.format(peer=peer)
+        r = subprocess.run(["docker", "exec", A, "bash", "-lc", cmd],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            print(f"ok   arena {label}: {peer} completes the handshake")
+            continue
+        print(f"FATAL: {peer} advertises {label} but the handshake fails (rc={r.returncode})",
+              file=sys.stderr)
+        print(f"       probe: {cmd}", file=sys.stderr)
+        for line in (r.stdout + r.stderr).strip().splitlines()[-4:]:
+            print(f"       {line}", file=sys.stderr)
+        print("       a bot row would fail as if the referee were wrong; fix the service first",
+              file=sys.stderr)
+        return 3
+    return 0
+
+
 def main() -> int:
     up = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True).stdout
     if A not in up or B not in up:
         print("FATAL: arena not up — docker compose up -d --build", file=sys.stderr)
         return 2
+    rc = preflight(B)
+    if rc:
+        return rc
 
     bad = 0
     for name, extra, (want_winner, want_class) in ROWS:

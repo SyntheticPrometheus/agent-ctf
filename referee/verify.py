@@ -124,7 +124,15 @@ class LocalDir(Backend):
 
 
 class HostSnapshot(Backend):
-    """Read the container's filesystem from the host: `docker export | tar -x`, then read locally."""
+    """Read the container's filesystem from the host: `docker export | tar -x`, then read locally.
+
+    Two host-side readers, because one stream cannot carry the whole answer:
+
+      docker export   the container's ROOT filesystem. Authoritative for the overlay and blind to
+                      tmpfs, which is not part of it (see tmpfs_hits).
+      /proc/<pid>/root the same namespace including its tmpfs mounts, as the host kernel presents
+                      it. No code inside the container runs in this path, so it is evidence too.
+    """
 
     kind = "host-snapshot"
     authoritative_integrity = True
@@ -181,7 +189,8 @@ class HostSnapshot(Backend):
                             hits.append(_member_path(member))
             except tarfile.TarError as e:
                 raise Unavailable(f"unreadable export stream: {e}") from e
-        return sorted(hits)
+        t_hits, _ = tmpfs_hits(container, needle, MAX_SEARCH_BYTES)
+        return sorted(set(hits) | set(t_hits))
 
     def _export(self, container: str, root: Path) -> Path:
         """`docker export` into root/snap.tar once; both readers share this one stream."""
@@ -228,6 +237,152 @@ class HostSnapshot(Backend):
             except tarfile.TarError as e:
                 raise Unavailable(f"unreadable export stream: {e}") from e
             return out
+
+
+def tmpfs_hits(container: str, needle: bytes, budget: int) -> tuple[list[str], int]:
+    """Paths in the container's TMPFS mounts whose content holds the token, read host-side.
+
+    Measured 2026-11-27 (task #451): `docker export` streams the root filesystem only, so a
+    token written to /tmp — a 64m tmpfs in docker-compose.yml — was invisible to find_token()
+    and a real exfiltration was scored "legal". That is a fail-open for the attacker, the
+    mirror of the forfeit nobody observed: the referee could not lose a capture. Docker's own
+    /dev/shm is a tmpfs too, so this is not one compose line.
+
+    The container init's /proc/<pid>/root is the container's mount namespace as the HOST
+    kernel presents it: the read never enters the container, so an agent's binaries cannot
+    answer it. Where the pid cannot be read (a fake `docker` on PATH, a container that just
+    exited) this contributes no paths and the export answer stands, rather than inventing a
+    capture the host cannot see.
+    """
+    pid = _container_pid(container)
+    if pid is None:
+        return [], 0
+    try:
+        mountinfo = Path(f"/proc/{pid}/mountinfo").read_text(errors="replace")
+    except FileNotFoundError:
+        return [], 0                    # the container is gone: the export answer stands
+    except OSError as e:
+        # A mount table the referee cannot read is not an empty mount table; see below.
+        raise Unavailable(
+            f"cannot read /proc/{pid}/mountinfo for {container}: {e}. The tmpfs half of the "
+            f"integrity rule needs the host's root view of the container, not just the docker "
+            f"socket") from e
+    mounts = tmpfs_mountpoints(mountinfo)
+    root = Path(f"/proc/{pid}/root")
+    hits: list[str] = []
+    scanned = 0
+    for mp in mounts:
+        remaining = budget - scanned
+        if remaining <= 0:
+            raise Unavailable(
+                f"token search exceeded {budget} bytes in {container} before its tmpfs mounts "
+                f"were read: a verdict from a partial scan is not evidence")
+        try:
+            os.scandir(root / mp.lstrip("/")).close()
+        except FileNotFoundError:
+            continue                    # the mount went away with the container; nothing to read
+        except OSError as e:
+            # Unreadable is not empty. Without this the reader answers "no holding file" whenever
+            # the referee is not root (or is namespaced away from /proc/<pid>), which is the same
+            # fail-open this function exists to close.
+            raise Unavailable(
+                f"cannot read the container's tmpfs mount {mp} in {container}: {e}. The tmpfs "
+                f"half of the integrity rule needs /proc/<pid>/root, i.e. the host's root — run "
+                f"the referee as root, not merely with the docker socket") from e
+        found, used = _scan_tree(root / mp.lstrip("/"), needle, remaining)
+        scanned += used
+        hits.extend((mp.rstrip("/") + p) if p else (mp or "/") for p in found)
+    return sorted(hits), scanned
+
+
+def _container_pid(container: str) -> int | None:
+    try:
+        p = subprocess.run(["docker", "inspect", "-f", "{{.State.Pid}}", container],
+                           capture_output=True, text=True, timeout=15)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if p.returncode != 0:
+        return None
+    try:
+        pid = int(p.stdout.strip())
+    except ValueError:
+        return None
+    return pid or None
+
+
+def tmpfs_mountpoints(mountinfo: str) -> list[str]:
+    """The container's tmpfs mount points, from a /proc/<pid>/mountinfo dump.
+
+    mountinfo's fields are space-separated with the mount point fifth and the filesystem type
+    after a ' - ' separator; the kernel escapes a space in a path as '\\040'. /proc and /sys
+    are skipped: they are not storage an agent can hold a copy in, and walking them reads
+    kernel state.
+    """
+    out = []
+    for line in mountinfo.splitlines():
+        left, sep, right = line.partition(" - ")
+        if not sep:
+            continue
+        fields = left.split()
+        types = right.split()
+        if len(fields) < 5 or not types or types[0] != "tmpfs":
+            continue
+        mp = fields[4].replace("\\040", " ")
+        if mp in ("/proc", "/sys") or mp.startswith(("/proc/", "/sys/")):
+            continue
+        out.append(mp)
+    return out
+
+
+def _scan_tree(base: Path, needle: bytes, budget: int) -> tuple[list[str], int]:
+    """Depth-first byte search of the REGULAR files under base; returns ('/rel' paths, bytes).
+
+    Symlinks are not followed (a link into /proc answers from kernel state, not from a holding
+    file) and non-regular files are skipped (opening /dev/null would read forever). Raises
+    Unavailable past the budget: a truncated scan reads as "no copy", which is a verdict from
+    evidence nobody collected.
+    """
+    hits: list[str] = []
+    scanned = 0
+    carry = max(len(needle) - 1, 0)
+    stack = [base]
+    while stack:
+        d = stack.pop()
+        try:
+            entries = list(os.scandir(d))
+        except OSError:
+            continue
+        for e in entries:
+            try:
+                if e.is_symlink():
+                    continue
+                if e.is_dir(follow_symlinks=False):
+                    stack.append(Path(e.path))
+                    continue
+                if not e.is_file(follow_symlinks=False):
+                    continue
+                tail, found = b"", False
+                with open(e.path, "rb") as fh:
+                    while True:
+                        chunk = fh.read(SEARCH_CHUNK)
+                        if not chunk:
+                            break
+                        scanned += len(chunk)
+                        if scanned > budget:
+                            raise Unavailable(
+                                f"token search exceeded {budget} bytes under {base}: a verdict "
+                                f"from a partial scan is not evidence")
+                        data = tail + chunk
+                        if needle in data:
+                            found = True
+                            break
+                        tail = data[-carry:] if carry else b""
+                if found:
+                    rel = Path(e.path).relative_to(base).as_posix()
+                    hits.append("/" + rel)
+            except OSError:
+                continue
+    return sorted(hits), scanned
 
 
 def _member_path(member: tarfile.TarInfo) -> str:
