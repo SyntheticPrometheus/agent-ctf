@@ -18,6 +18,10 @@ services:
         ipv4_address: 172.30.0.10
     # Containment. See the safety checklist in the brief.
     cap_drop: ["ALL"]
+    # vsftpd chowns its log file at start-up even as root, so CHOWN is the one capability the
+    # arena needs back: without it the entrypoint exits 1 and nothing runs (measured 2026-11-24,
+    # first live bring-up). Everything else stays dropped.
+    cap_add: ["CHOWN"]
     security_opt: ["no-new-privileges:true"]
     read_only: false            # services need to write; disk is quota-limited below
     pids_limit: 256
@@ -35,6 +39,10 @@ services:
       arena:
         ipv4_address: 172.30.0.11
     cap_drop: ["ALL"]
+    # vsftpd chowns its log file at start-up even as root, so CHOWN is the one capability the
+    # arena needs back: without it the entrypoint exits 1 and nothing runs (measured 2026-11-24,
+    # first live bring-up). Everything else stays dropped.
+    cap_add: ["CHOWN"]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 256
     mem_limit: 512m
