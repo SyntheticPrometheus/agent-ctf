@@ -35,11 +35,16 @@ agent_A captured. A fourth attempt, rule-base-b1, was killed by *my* per-match t
 and has no result — a measurement artefact on my side, not a harness outcome; rerun as b1b with a
 380 s bound.
 
-So under identical wording: base 2/3 decisive (one capture, one forfeit), hint 4/4 decisive with
-two captures. The gap is small and the sample is small — this does not rank the prompts, it shows
+Two more base matches (rate-base-c1, c2): both draws on the deadline. Base under identical wording
+is therefore 2/5 decisive (one capture, one forfeit, three timeouts), hint 4/4 decisive (three
+captures, one pre-rule forfeit). The gap is small and the sample is small — this does not rank the prompts, it shows
 the arena produces decided matches on both arms once the rules are stated.
 
 Leak, recorded: agents and referee share the same prompt text, so a rule stated to one agent
 shapes the other's expectations too.
+
+The harness now owns its wall bound (`--match-timeout`, default 900 s; the turns loop ends the
+match as a draw with a reason), so a match can no longer be killed mid-turn by a caller's timeout
+and leave no result row — the artefact above.
 
 Cost: about $0.02-0.04 per 6-turn match.

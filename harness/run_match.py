@@ -40,6 +40,9 @@ def parse_args():
     ap.add_argument("--mode", choices=["turns", "realtime"], default="turns")
     ap.add_argument("--first", choices=["A", "B"], default="A")
     ap.add_argument("--max-turns", type=int, default=20)
+    ap.add_argument("--match-timeout", type=int, default=900,
+                    help="wall bound for the whole match: a match nobody was timing is how the "
+                         "base arm lost a run to the caller's shell timeout instead (2026-11-24)")
     ap.add_argument("--tool-calls", type=int, default=5)
     ap.add_argument("--duration", type=int, default=900, help="realtime seconds")
     ap.add_argument("--defense-window", type=int, default=0,
@@ -133,10 +136,16 @@ def main():
 
 def run_turns(args, ref, clock, agent_a, agent_b, containers):
     order = [agent_a, agent_b] if args.first == "A" else [agent_b, agent_a]
+    deadline = time.time() + args.match_timeout
     for turn in range(1, args.max_turns + 1):
         clock.current_turn = turn
         for current in order:
             if ref.winner:
+                return
+            if time.time() > deadline:
+                # The harness ends its own match; a caller's `timeout` would kill the process
+                # mid-turn and leave no result row (measured: rule-base-b1).
+                ref._draw("match wall bound reached — no result")
                 return
             idle = agent_b if current is agent_a else agent_a
             if args.pause_idle:
