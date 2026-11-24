@@ -14,6 +14,7 @@ So ownership is a lock file, not a hope. The shell wrapper takes the same file w
 from __future__ import annotations
 
 import fcntl
+import datetime
 import os
 import sys
 import time
@@ -66,3 +67,35 @@ class lock:
     def __exit__(self, *exc):
         self.release()
         return False
+
+
+# ------------------------------------------------------------------ freshness
+# Ownership stops two matches overlapping; it does not make a container new. Measured
+# 2026-11-24 (task #454): `validation/live_match.py` left the arena up, `run_match.py` then ran
+# `compose up -d --build` against the SAME containers, and the exfiltrator bot's fake token
+# (`/home/agent/stolen`, written by validation/bots.py) was still there when the LLM agents
+# played. Agent B read it and reported a "flag" neither side planted. A match must start from
+# containers this run created, and the log must let a reader check that afterwards.
+
+def parse_started(text: str) -> dict[str, float]:
+    """`docker inspect -f '{{.Name}} {{.State.Status}} {{.State.StartedAt}}'` lines -> {name: epoch}.
+
+    A line whose timestamp cannot be read is dropped, never guessed: an unreadable age is not
+    evidence of freshness, and a guess here is what let a stale box pass as new.
+    """
+    out: dict[str, float] = {}
+    for line in (text or "").splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        name, stamp = parts[0].lstrip("/"), parts[-1]
+        try:
+            out[name] = datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            continue
+    return out
+
+
+def stale(started: dict[str, float], match_started: float, slack: float = 2.0) -> list[str]:
+    """Containers that were already running when this match began (they predate match_started)."""
+    return sorted(n for n, t in started.items() if t < match_started - slack)

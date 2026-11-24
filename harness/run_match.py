@@ -34,6 +34,14 @@ def compose(*args):
     subprocess.run(["docker", "compose", *args], check=True, cwd=ROOT)
 
 
+def arena_containers() -> dict[str, float]:
+    """Container name -> start epoch, read through the daemon (host-side evidence, not the box's)."""
+    r = subprocess.run(["docker", "inspect", "-f",
+                        "{{.Name}} {{.State.Status}} {{.State.StartedAt}}", A_CONTAINER, B_CONTAINER],
+                       capture_output=True, text=True)
+    return arena_lock.parse_started(r.stdout) if r.returncode == 0 else {}
+
+
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", help="JSON file of defaults")
@@ -86,8 +94,20 @@ def _main():
     log_path = os.path.join(ROOT, "logs", f"{args.match_id}.jsonl")
 
     print(f"[match {args.match_id}] bringing up arena")
+    match_started = time.time()
+    leftovers = arena_containers()
+    if leftovers:
+        print(f"[match {args.match_id}] tearing down {len(leftovers)} container(s) left by an "
+              f"earlier run ({', '.join(sorted(leftovers))}): a match starts on boxes it created")
+        compose("down", "-v")
     compose("up", "-d", "--build")
     time.sleep(8)
+    started = arena_containers()
+    old = arena_lock.stale(started, match_started)
+    if old:
+        print(f"arena not fresh: {', '.join(old)} predate this match — refusing to plant flags "
+              f"on a box another run wrote to (task #454)", file=sys.stderr)
+        return 4
 
     side_a, side_b = Side("agent_A", A_CONTAINER), Side("agent_B", B_CONTAINER)
     # The flag rule is read from the host side by default: an agent that shims grep inside its
@@ -105,7 +125,9 @@ def _main():
     ref.log("match_start", match_id=args.match_id, mode=args.mode,
             first=args.first, scoring=args.scoring,
             defense_window=args.defense_window,
-            integrity_src=ref.backend.kind, health_src="in-container")
+            integrity_src=ref.backend.kind, health_src="in-container",
+            arena_reset=bool(leftovers),
+            arena_started={n: int(t) for n, t in sorted(started.items())})
     ref.plant_flags()
     ref.start_monitor()
     if args.watch:
