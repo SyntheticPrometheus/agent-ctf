@@ -191,3 +191,23 @@ keeps it per row. One run, 8 per arm, 6 turns:
 - This run was 16/16 decisive where earlier runs drew 4-5 times per 16 with the same config. Same
   arms, same turns, no code change to the agents between them; the difference is unexplained and is
   a reason not to treat any single run's rate as a finding.
+
+## Chasing the variance: draws are thrash, not slow reconnaissance (54 matches read)
+
+Every `bench-*` log with a result row, 41 decisive and 13 draws:
+
+| measure | decisive | drawn |
+|---|---|---|
+| calls before the first opponent reference | median 15 | median 13 |
+| calls before the first web probe (/read, /ping, :8080) | median 3 | median 3 |
+| tool calls in the match | median 39 | median 70 |
+
+So agents find the web surface at the same tempo whether they win or time out — the drawn matches
+are the ones that keep going, not the ones that start late. That rules out "slow reconnaissance" as
+the explanation; it does not explain why one 16-match run was 16/16 decisive while earlier runs drew
+4-5 times with the same config.
+
+The event that would separate the two remaining explanations (never found the token vs found it and
+never submitted) only exists from 07:10 onward, so it cannot be tested on the older draws: every
+capture in that run logged `token_in_output` >= 1. The next bench answers it — a draw with a
+`token_in_output` event is a conversion failure, a draw without one is a discovery failure.
