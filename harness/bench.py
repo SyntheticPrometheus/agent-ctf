@@ -53,6 +53,11 @@ def run_one(arm: str, idx: int, args) -> dict:
     row["reason"] = end[-1]["reason"] if end else "no result row"
     paid = [e.get("command", "")[:120] for e in events if e["kind"] == "token_in_output"]
     row["paid_by"] = paid
+    # The two failure explanations a draw can have, separated by data rather than by guesswork:
+    # a draw WITH a foreign token in a tool output is a conversion failure (found it, never
+    # submitted); a draw without one is a discovery failure.
+    row["found"] = bool(paid)
+    row["conversion_fail"] = bool(paid) and row["submits"] == 0
     calls = [str(e.get("input") or e.get("args") or "")
              for e in events if e["kind"] == "tool_call"]
     row["calls"] = len(calls)
