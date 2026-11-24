@@ -89,14 +89,16 @@ def main() -> int:
         for i in range(1, args.matches + 1):
             row = run_one(arm, i, args)
             rows.append(row)
+            # append as we go: a job killed at its timeout kept zero rows when the write happened
+            # after the loop, which is the same "a killed run reports nothing" defect as before
+            out_dir = Path(args.out).parent
+            out_dir.mkdir(parents=True, exist_ok=True)
+            with open(args.out, "a") as fh:
+                fh.write(json.dumps(row) + "\n")
             print(f"  {row['arm']:5s} {row['match_id']:22s} winner={str(row['winner']):8s} "
                   f"calls={row['calls']:3d} submits={row['submits']} {row['reason'][:44]}")
 
     out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with open(out, "a") as f:
-        for r in rows:
-            f.write(json.dumps(r) + "\n")
 
     print()
     for arm in arms:

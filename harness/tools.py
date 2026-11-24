@@ -49,8 +49,15 @@ class AgentTools:
             out = out[:MAX_OUTPUT] + "\n[...truncated...]"
         # Which command actually produced a token? Presence-of-route ("used ssh") is not payment
         # ("the ssh read returned the flag"), and the 2026-11-24 bench could only record presence.
-        if TOKEN_RE.search(out):
-            self.logger("token_in_output", agent=self.agent_name, command=command[:160])
+        found = TOKEN_RE.findall(out)
+        if found:
+            # Only a token that is NOT your own is payment: the first attribution run logged
+            # 'cat /home/agent/flag.txt' (the agent reading its own flag) as a capture.
+            own = getattr(self.referee.sides.get(self.agent_name), "token", None)
+            foreign = [t for t in found if t != own]
+            if foreign:
+                self.logger("token_in_output", agent=self.agent_name, command=command[:160],
+                            token_hash=__import__("hashlib").sha256(foreign[0].encode()).hexdigest())
         return out or "[no output]"
 
     def submit_flag(self, token: str) -> str:
