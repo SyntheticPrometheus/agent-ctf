@@ -42,31 +42,40 @@ def to_openai_tools(tool_schema: list) -> list:
             for t in tool_schema]
 
 
+def _f(block, key, default=None):
+    """Blocks arrive as dicts (seed messages) and as the SimpleNamespace objects to_anthropic makes
+    (everything the loop appends back). Reading one shape crashed the first live match."""
+    return block.get(key, default) if isinstance(block, dict) else getattr(block, key, default)
+
+
 def to_openai_messages(system: str, messages: list) -> list:
     """Anthropic blocks -> OpenAI messages. Tool results become role=tool messages."""
     out = [{"role": "system", "content": system}]
     for m in messages:
-        content = m.get("content")
+        role = _f(m, "role")
+        content = _f(m, "content")
         if isinstance(content, str):
-            out.append({"role": m["role"], "content": content})
+            out.append({"role": role, "content": content})
             continue
-        if m["role"] == "assistant":
-            text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
-            calls = [{"id": b["id"], "type": "function",
-                      "function": {"name": b["name"], "arguments": json.dumps(b["input"])}}
-                     for b in content if b.get("type") == "tool_use"]
+        if role == "assistant":
+            text = "".join(_f(b, "text", "") or "" for b in content
+                           if _f(b, "type") == "text")
+            calls = [{"id": _f(b, "id"), "type": "function",
+                      "function": {"name": _f(b, "name"),
+                                   "arguments": json.dumps(_f(b, "input") or {})}}
+                     for b in content if _f(b, "type") == "tool_use"]
             msg = {"role": "assistant", "content": text or None}
             if calls:
                 msg["tool_calls"] = calls
             out.append(msg)
         else:                                   # user turn carrying tool_results
             for b in content:
-                if b.get("type") == "tool_result":
-                    body = b.get("content")
-                    out.append({"role": "tool", "tool_call_id": b["tool_use_id"],
+                if _f(b, "type") == "tool_result":
+                    body = _f(b, "content")
+                    out.append({"role": "tool", "tool_call_id": _f(b, "tool_use_id"),
                                 "content": body if isinstance(body, str) else json.dumps(body)})
-                elif b.get("type") == "text":
-                    out.append({"role": "user", "content": b["text"]})
+                elif _f(b, "type") == "text":
+                    out.append({"role": "user", "content": _f(b, "text")})
     return out
 
 

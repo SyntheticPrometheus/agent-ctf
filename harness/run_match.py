@@ -76,10 +76,15 @@ def main():
 
     side_a, side_b = Side("agent_A", A_CONTAINER), Side("agent_B", B_CONTAINER)
     # The flag rule is read from the host side by default: an agent that shims grep inside its
-    # own box cannot fake "flag intact". CTF_VERIFIER=in-container restores the old path.
-    backend = verify.from_env(referee._dexec)
+    # own box cannot fake "flag intact". Built from the FLAG, not from verify.from_env(): that
+    # helper defaults to in-container, so `--verifier snapshot` (this flag's own default) lost to
+    # an unset env var and the first live match logged integrity_src=in-container and refused
+    # every integrity check (3x integrity_unverified). A documented default that the code
+    # overrides is the same defect class this package exists to catch.
     if args.verifier == "in-container":
         backend = referee.ContainerExec(referee._dexec)
+    else:
+        backend = verify.HostSnapshot()
     ref = Referee(side_a, side_b, log_path, scoring=args.scoring, backend=backend,
                   strict_integrity=args.strict_integrity)
     ref.log("match_start", match_id=args.match_id, mode=args.mode,
@@ -160,4 +165,13 @@ def run_realtime(args, ref, clock, agent_a, agent_b):
 
 
 if __name__ == "__main__":
-    main()
+    # A crashed match must not exit 0: the first live run died on a translation bug and still
+    # reported success to its caller. Same fail-open class as the old containment check.
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
