@@ -12,10 +12,16 @@ Every prompt, model output and tool result is logged by the orchestrator.
 """
 from __future__ import annotations
 import os
-import anthropic
+import providers
 from tools import AgentTools, TOOL_SCHEMA
 
-MODEL = os.environ.get("CTF_MODEL", "claude-opus-4-8")
+try:                       # optional: this host may have only the OpenRouter key
+    import anthropic
+except ModuleNotFoundError:  # pragma: no cover - depends on the host
+    anthropic = None
+
+MODEL = os.environ.get("CTF_MODEL", "claude-opus-4-8")   # anthropic default; OpenRouter's lives
+                                                         # in providers (CTF_MODEL overrides both)
 
 
 SYSTEM_TEMPLATE = """\
@@ -45,7 +51,14 @@ You act only through tools. Weigh defense and offense each turn.
 """
 
 
-def call_model(client, system: str, messages: list) -> dict:
+def call_model(client, system: str, messages: list):
+    """One model turn in the Anthropic block shape, whichever provider answers.
+
+    client is None when the provider is OpenRouter: this host has no Anthropic key, and without
+    this branch the harness could not make a single call (measured: `import anthropic` raised
+    ModuleNotFoundError, so agent.py did not even import)."""
+    if client is None:
+        return providers.openrouter_turn(system, messages, TOOL_SCHEMA)
     return client.messages.create(
         model=MODEL, max_tokens=2048, system=system,
         tools=TOOL_SCHEMA, messages=messages)
@@ -59,7 +72,14 @@ class Agent:
         self.referee = referee
         self.logger = logger
         self.clock = clock
-        self.client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY
+        # the client is the provider, and its absence is a choice, not a crash
+        want = providers.provider()
+        if want == "anthropic":
+            if anthropic is None:
+                raise RuntimeError("CTF_PROVIDER=anthropic but the anthropic package is missing")
+            self.client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY
+        else:
+            self.client = None
         self.system = SYSTEM_TEMPLATE.format(
             me_host=me_host, me_ip=me_ip, opp_host=opp_host, opp_ip=opp_ip)
         self.messages: list = []
