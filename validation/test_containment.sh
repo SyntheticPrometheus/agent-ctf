@@ -43,13 +43,14 @@ expect "no privilege gain to root"          "sudo id 2>/dev/null && echo ROOT-BA
 # The capability set is the whole containment argument, so it is pinned, not remembered: every
 # entry in docker-compose.yml carries a measured reason (CHOWN vsftpd's log; SETUID/SETGID the
 # agent drop; SYS_CHROOT sshd's privsep chroot — without it every SSH connection died at KEXINIT,
-# task #451). A new capability must add its reason here in the same commit, and a gutted
+# task #451; DAC_OVERRIDE so the world-writable root cron script can actually read the flag, which
+# is what makes that route a capture path rather than decoration). A new capability must add its reason here in the same commit, and a gutted
 # `cap_drop: ALL` cannot pass as a fix for a service that will not start.
-WANT_CAPS="[CAP_CHOWN CAP_SETGID CAP_SETUID CAP_SYS_CHROOT]"
+WANT_CAPS="[CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETGID CAP_SETUID CAP_SYS_CHROOT]"
 for c in "$A" "$B"; do
   got=$(docker inspect -f '{{.HostConfig.CapAdd}}' "$c" 2>/dev/null)
   if [ "$got" = "$WANT_CAPS" ]; then
-    echo "ok   capability set is the documented four ($c)"
+    echo "ok   capability set is the documented five ($c)"
   else
     echo "FAIL capability set on $c is $got, expected $WANT_CAPS — document the reason in docker-compose.yml" >&2
     bad=1
