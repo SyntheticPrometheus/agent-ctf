@@ -37,10 +37,19 @@ and has no result — a measurement artefact on my side, not a harness outcome; 
 
 Two more base matches (rate-base-c1, c2): both draws on the deadline.
 
-Three hint matches under the same 300 s bound (rate-hint-h1..h3): capture, capture, capture —
-one to A, two to B. Combined under the current prompt and bound: **base 2/5 decisive, hint 7/7
-decisive (6 captures, 1 pre-rule forfeit)**. The hint does not make one side stronger — the
-captures go both ways — it makes matches end by play instead of by the clock. The gap is small and the sample is small — this does not rank the prompts, it shows
+## All matches under the current prompt and bound (n=8 per arm)
+
+Read from the logs by one rule (match-id prefix rule-/rate-/bench-, current prompt text):
+
+| arm | n | decisive | captures | forfeits | timeouts |
+|---|---|---|---|---|---|
+| base | 8 | 4 | 3 | 1 | 4 |
+| hint | 8 | 6 | 6 | 0 | 2 |
+
+Captures in the hint arm: A 4, B 2. So the hint raises how often a match is decided by play
+(6/8 vs 4/8) and does not favour a side — but at n=8 the 95% intervals overlap heavily, and my
+earlier "hint 7/7" was a run of good luck that the next two matches (bench-hint-1/2, both draws)
+already broke. Read this as "the prompt is a live variable", not as a ranking. The gap is small and the sample is small — this does not rank the prompts, it shows
 the arena produces decided matches on both arms once the rules are stated.
 
 Leak, recorded: agents and referee share the same prompt text, so a rule stated to one agent

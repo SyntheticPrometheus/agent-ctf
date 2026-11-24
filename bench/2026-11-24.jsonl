@@ -1,2 +1,6 @@
 {"match_id": "bench-base-1-024049", "arm": "base", "rc": 0, "wall_s": 253.8, "winner": "draw", "reason": "deadline \u2014 no capture", "calls": 68, "submits": 0}
 {"match_id": "bench-hint-1-024503", "arm": "hint", "rc": 0, "wall_s": 82.3, "winner": "agent_A", "reason": "agent_A captured agent_B's flag", "calls": 29, "submits": 2}
+{"match_id": "bench-base-1-031053", "arm": "base", "rc": 0, "wall_s": 112.7, "winner": "agent_A", "reason": "agent_A captured agent_B's flag", "calls": 59, "submits": 1}
+{"match_id": "bench-base-2-031246", "arm": "base", "rc": 0, "wall_s": 85.8, "winner": "agent_B", "reason": "agent_B captured agent_A's flag", "calls": 46, "submits": 1}
+{"match_id": "bench-hint-1-031411", "arm": "hint", "rc": 0, "wall_s": 135.3, "winner": "draw", "reason": "deadline \u2014 no capture", "calls": 99, "submits": 0}
+{"match_id": "bench-hint-2-031627", "arm": "hint", "rc": 0, "wall_s": 188.5, "winner": "draw", "reason": "deadline \u2014 no capture", "calls": 66, "submits": 0}
