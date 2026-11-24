@@ -1,0 +1,23 @@
+name: validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"     # weekly, off-host: the same pins the host runs
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # No docker in this job on purpose: everything here is the offline referee, which is the
+      # part that must stay green without a daemon. A live match needs a docker host.
+      - name: referee rules
+        run: python3 validation/test_referee.py
+      - name: snapshot bounds (512 KB blind spot)
+        run: python3 validation/test_snapshot_bounds.py
+      - name: trust boundary and path labels
+        run: python3 validation/test_trust_boundary.py
