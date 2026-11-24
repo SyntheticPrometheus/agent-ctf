@@ -170,3 +170,24 @@ returned the flag" are different claims, and this bench could only make the firs
 Fixed in the same commit: `AgentTools.shell` now logs `token_in_output` when a command's output
 contains a FLAG{...} token, so the next run can name the command that actually paid. Route
 presence stays in bench.py; payment becomes an event.
+
+## First payment-attributed run: 16 matches, 16 captures, all through HTTP (job j55182694)
+
+`token_in_output` now names the command whose output carried the opponent's token, and `paid_by`
+keeps it per row. One run, 8 per arm, 6 turns:
+
+| arm | n | decisive | captures | paying route |
+|---|---|---|---|---|
+| base | 8 | 8 | 8 | web-read 7, web-ping 3 |
+| hint | 8 | 8 | 8 | web-read 6, web-ping 2 |
+
+- **Every capture paid through the web app.** The traversal paid 13 of 16; the /ping injection paid
+  5, and in two matches (bench-base-8, bench-hint-5) it was the *only* paying command. So the second
+  web vuln does earn its keep, and my earlier "13 of 15 via /read, one endpoint does all the work"
+  was too strong: the arena has two paying web routes.
+- **Neither added route ever paid.** ssh appeared in 0 captures and the cron privesc in 0, across 16
+  matches, even with the credential seeded in .bash_history and DAC_OVERRIDE restored so the route
+  *can* pay. Agents attack the visible HTTP surface.
+- This run was 16/16 decisive where earlier runs drew 4-5 times per 16 with the same config. Same
+  arms, same turns, no code change to the agents between them; the difference is unexplained and is
+  a reason not to treat any single run's rate as a finding.
