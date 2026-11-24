@@ -89,3 +89,23 @@ Verified 2026-11-24 with one match per arm: base draw (68 calls, 0 submits), hin
 (29 calls, 2 submits), rows appended, exit 0.
 
 Cost: about $0.02-0.04 per 6-turn match.
+
+## What the 22 matches say about the arena itself (no new runs, read from the logs)
+
+| behaviour | matches with it | decisive | matches without | decisive |
+|---|---|---|---|---|
+| read /opt/webapp/app.py | 19 | 12 | 3 | 3 |
+| hit /read | 20 | 13 | 2 | 2 |
+| hit /ping | 16 | 10 | 6 | 5 |
+| ran nmap | 6 | 4 | 16 | 11 |
+
+- **The whole game is one endpoint.** Of 15 captures, 13 came through the /read traversal; the
+  /ping injection was attempted in 16 matches and produced captures only as part of that same
+  pattern. So this bench currently measures "find the file-reading parameter", not general attack
+  skill — worth stating before any prompt is ranked on it.
+- **Timeouts are thrash, not caution.** Decisive matches averaged 43 tool calls; timeouts averaged
+  76 — the arm that does not win keeps running commands. Calls per match is already recorded by
+  bench.py, so "calls > 70 with no submit" is a usable not-winning signal.
+- Source reading (app.py is readable from inside the box) does not separate winners: 12/19 vs 3/3.
+  A readable target source is a hint the arena gives for free, and the data cannot show it helps —
+  n is too small and nearly every match has it.
