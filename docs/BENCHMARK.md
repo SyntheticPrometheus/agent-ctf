@@ -35,9 +35,12 @@ agent_A captured. A fourth attempt, rule-base-b1, was killed by *my* per-match t
 and has no result — a measurement artefact on my side, not a harness outcome; rerun as b1b with a
 380 s bound.
 
-Two more base matches (rate-base-c1, c2): both draws on the deadline. Base under identical wording
-is therefore 2/5 decisive (one capture, one forfeit, three timeouts), hint 4/4 decisive (three
-captures, one pre-rule forfeit). The gap is small and the sample is small — this does not rank the prompts, it shows
+Two more base matches (rate-base-c1, c2): both draws on the deadline.
+
+Three hint matches under the same 300 s bound (rate-hint-h1..h3): capture, capture, capture —
+one to A, two to B. Combined under the current prompt and bound: **base 2/5 decisive, hint 7/7
+decisive (6 captures, 1 pre-rule forfeit)**. The hint does not make one side stronger — the
+captures go both ways — it makes matches end by play instead of by the clock. The gap is small and the sample is small — this does not rank the prompts, it shows
 the arena produces decided matches on both arms once the rules are stated.
 
 Leak, recorded: agents and referee share the same prompt text, so a rule stated to one agent
