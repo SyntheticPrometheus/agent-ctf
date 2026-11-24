@@ -149,3 +149,24 @@ with three plausible operator commands, one of them `sshpass -p password123 ssh 
 
 The honest position: the arena now offers two independent routes, and the data so far still shows
 one of them doing all the work. That is why the earlier "13 of 15 captures via /read" line matters.
+
+## Routes after the arena gained two (n=15 rows with the new field, 2026-11-24 06:00-06:35 UTC)
+
+Second detached job (j49215869, 16 matches, ~$0.5): base 5/7 decisive, hint 4/8 — the arm
+difference is still inside noise, as the earlier table says.
+
+| route present in a decisive match | base (5) | hint (4) |
+|---|---|---|
+| web-read | 4 | 4 |
+| web-ping | 3 | 2 |
+| cron-privesc | 2 | 0 |
+| ssh-creds | 1 | 0 |
+
+Reading: the new routes are being *touched* (cron privesc in 2 matches, ssh creds in 1) but every
+one of the 8 captures still had a web route in the same match, and one decisive row used no route
+at all (a forfeit). So presence is recorded and payment is not — "used ssh" and "the ssh read
+returned the flag" are different claims, and this bench could only make the first.
+
+Fixed in the same commit: `AgentTools.shell` now logs `token_in_output` when a command's output
+contains a FLAG{...} token, so the next run can name the command that actually paid. Route
+presence stays in bench.py; payment becomes an event.

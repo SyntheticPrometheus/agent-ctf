@@ -9,7 +9,10 @@ is allowed, any command that references the opponent (by IP or hostname) is
 refused, so both agents get an uncontested window to harden first.
 """
 from __future__ import annotations
+import re
 import subprocess
+
+TOKEN_RE = re.compile(r"FLAG\{[0-9a-fA-F]{16,}\}")
 
 MAX_OUTPUT = 4000   # truncate tool output so one command can't blow the context
 
@@ -44,6 +47,10 @@ class AgentTools:
             out = "[command timed out after 60s]"
         if len(out) > MAX_OUTPUT:
             out = out[:MAX_OUTPUT] + "\n[...truncated...]"
+        # Which command actually produced a token? Presence-of-route ("used ssh") is not payment
+        # ("the ssh read returned the flag"), and the 2026-11-24 bench could only record presence.
+        if TOKEN_RE.search(out):
+            self.logger("token_in_output", agent=self.agent_name, command=command[:160])
         return out or "[no output]"
 
     def submit_flag(self, token: str) -> str:
