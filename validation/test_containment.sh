@@ -21,25 +21,24 @@ for c in "$A" "$B"; do
   fi
 done
 
-# expect <label> <want: good|bad> <command>
+# expect <label> <command>: the probe prints "<something>-good" only in the wanted state, and
+# "<something>-BAD" (or UNREACHABLE-CHECK) otherwise. Asserting the suffix keeps the two failure
+# modes apart: a violated expectation and an inconclusive probe both fail, but say which.
 expect() {
-  local label="$1" want="$2" cmd="$3" out
+  local label="$1" cmd="$2" out
   out=$(docker exec "$A" bash -lc "$cmd" 2>&1)
-  case "$want:$out" in
-    bad:*REACHABLE*|bad:*RESOLVED*|bad:*PRESENT*|bad:*ROOT-BAD*)
-      echo "FAIL $label — got: $out" >&2; bad=1 ;;
-    good:*blocked-good*|good:*absent-good*|good:*reachable-good*|good:*noroot-good*)
-      echo "ok   $label" ;;
-    *)
-      echo "FAIL $label — inconclusive: $out" >&2; bad=1 ;;
+  case "$out" in
+    *-good)   echo "ok   $label" ;;
+    *-BAD*|*UNREACHABLE*) echo "FAIL $label — violated: $out" >&2; bad=1 ;;
+    *)        echo "FAIL $label — inconclusive: $out" >&2; bad=1 ;;
   esac
 }
 
-expect "internet egress blocked"            bad  "curl -s --max-time 5 https://example.com >/dev/null && echo REACHABLE-BAD || echo blocked-good"
-expect "public DNS does not resolve"        bad  "getent hosts google.com >/dev/null && echo RESOLVED-BAD || echo blocked-good"
-expect "no docker socket in the box"        bad  "test -S /var/run/docker.sock && echo PRESENT-BAD || echo absent-good"
-expect "opponent reachable on arena net"    good "ping -c1 -W2 172.30.0.11 >/dev/null && echo reachable-good || echo UNREACHABLE-CHECK"
-expect "no privilege gain to root"          bad  "sudo id 2>/dev/null && echo ROOT-BAD || echo noroot-good"
+expect "internet egress blocked"            "curl -s --max-time 5 https://example.com >/dev/null && echo REACHABLE-BAD || echo blocked-good"
+expect "public DNS does not resolve"        "getent hosts google.com >/dev/null && echo RESOLVED-BAD || echo blocked-good"
+expect "no docker socket in the box"        "test -S /var/run/docker.sock && echo PRESENT-BAD || echo absent-good"
+expect "opponent reachable on arena net"    "ping -c1 -W2 172.30.0.11 >/dev/null && echo reachable-good || echo UNREACHABLE-CHECK"
+expect "no privilege gain to root"          "sudo id 2>/dev/null && echo ROOT-BAD || echo noroot-good"
 
 if [ "$bad" -ne 0 ]; then
   echo "containment: FAILED — do not run agents against this arena"

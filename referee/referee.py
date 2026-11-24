@@ -108,8 +108,12 @@ class Referee:
         for s in self.sides.values():
             s.token = "FLAG{" + secrets.token_hex(16) + "}"
             s.token_hash = hashlib.sha256(s.token.encode()).hexdigest()
+            # Planted AS the agent user: with cap_drop ALL the root user inside the box has no
+            # DAC_OVERRIDE, so writing into agent's 0700 home failed on the first live bring-up
+            # ("Permission denied"). The owner writes its own flag, which is also the situation
+            # the rules describe.
             self.backend.exec(s.container, ["bash", "-c",
-                   f"echo -n {shq(s.token)} > {FLAG_PATH} && chown agent:agent {FLAG_PATH}"])
+                   f"su agent -c {shq('printf %s ' + shq(s.token) + ' > ' + FLAG_PATH)}"])
             self._baseline_blobs[s.name] = set(self._blobs(s.container))
             self.log("flag_planted", side=s.name, container=s.container,
                      token_hash=s.token_hash)

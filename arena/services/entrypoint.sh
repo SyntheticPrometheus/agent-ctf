@@ -20,7 +20,9 @@ service ssh start
 service vsftpd start
 service cron start
 
-# the web app runs as the unprivileged agent user
+# the web app runs as the unprivileged agent user; app.py makes its own pages dir at import,
+# so that parent path must be writable by agent (measured: PermissionError on first bring-up)
+install -d -o agent -g agent /opt/webapp
 su agent -c 'python /opt/webapp/app.py &'
 
 echo "host up: $(hostname)"
