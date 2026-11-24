@@ -51,6 +51,8 @@ def run_one(arm: str, idx: int, args) -> dict:
     end = [e for e in events if e["kind"] == "result"]
     row["winner"] = end[-1]["winner"] if end else None
     row["reason"] = end[-1]["reason"] if end else "no result row"
+    paid = [e.get("command", "")[:120] for e in events if e["kind"] == "token_in_output"]
+    row["paid_by"] = paid
     calls = [str(e.get("input") or e.get("args") or "")
              for e in events if e["kind"] == "tool_call"]
     row["calls"] = len(calls)
