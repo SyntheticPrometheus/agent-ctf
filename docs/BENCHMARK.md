@@ -27,7 +27,19 @@ Two matches after that, same arm, same 6 turns: rule-r1 agent_A captured, rule-r
 no copy warnings at all. So the forfeit was an unstated rule, not a bad hint — and the hinted arm
 is now decisive 4/4, with one forfeit recorded before the rule was stated.
 
-Caveat: the base arm has not been re-run under the new prompt text, so 1/3 is a figure from the
-older wording. Repeating the base arm is the next honest measurement.
+## Like-for-like: base arm re-run under the same prompt text
+
+Three matches, same command, 6 turns, hint unset: rule-base-b1b draw on the deadline (77 tool
+calls, 0 submits), rule-base-b2 agent_A won by forfeit (agent_B lost its flag), rule-base-b3
+agent_A captured. A fourth attempt, rule-base-b1, was killed by *my* per-match timeout after 200 s
+and has no result — a measurement artefact on my side, not a harness outcome; rerun as b1b with a
+380 s bound.
+
+So under identical wording: base 2/3 decisive (one capture, one forfeit), hint 4/4 decisive with
+two captures. The gap is small and the sample is small — this does not rank the prompts, it shows
+the arena produces decided matches on both arms once the rules are stated.
+
+Leak, recorded: agents and referee share the same prompt text, so a rule stated to one agent
+shapes the other's expectations too.
 
 Cost: about $0.02-0.04 per 6-turn match.
