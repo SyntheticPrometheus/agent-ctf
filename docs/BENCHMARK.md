@@ -46,10 +46,24 @@ Read from the logs by one rule (match-id prefix rule-/rate-/bench-, current prom
 | base | 8 | 4 | 3 | 1 | 4 |
 | hint | 8 | 6 | 6 | 0 | 2 |
 
-Captures in the hint arm: A 4, B 2. So the hint raises how often a match is decided by play
-(6/8 vs 4/8) and does not favour a side — but at n=8 the 95% intervals overlap heavily, and my
-earlier "hint 7/7" was a run of good luck that the next two matches (bench-hint-1/2, both draws)
-already broke. Read this as "the prompt is a live variable", not as a ranking. The gap is small and the sample is small — this does not rank the prompts, it shows
+## The detached run: n=11 per arm (bench/2026-11-24.jsonl, all 22 rows)
+
+Sixteen more matches arrived from the first detached `pi-done` job (unit j38523916, finished in
+~24 min of wall time, ~$0.5). Whole file, one rule:
+
+| arm | n | decisive | captures | forfeits | timeouts | mean wall |
+|---|---|---|---|---|---|---|
+| base | 11 | 9 | 9 (A 4, B 5) | 0 | 2 | 113 s |
+| hint | 11 | 6 | 6 (A 3, B 3) | 0 | 5 | 120 s |
+
+The direction reversed. Base was 4/8 decisive before this batch and 9/11 after; the hint was 6/8
+before and 6/11 overall. So the honest conclusion, stated plainly: **at n=11 per arm this bench does
+not establish that the hint changes anything**. A difference of 3 matches in 11 is well inside
+run-to-run variance, and two successive looks at the same arms pointed opposite ways — which is the
+strongest available evidence that the effect I claimed two turns ago was noise.
+
+What does hold: matches are decided by play in the large majority (15/22), captures go both ways
+(A 7, B 8), and no forfeit recurred after the copy rule was stated. The gap is small and the sample is small — this does not rank the prompts, it shows
 the arena produces decided matches on both arms once the rules are stated.
 
 Leak, recorded: agents and referee share the same prompt text, so a rule stated to one agent
